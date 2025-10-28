@@ -1,0 +1,43 @@
+# Sharp Objects Configuration Example
+# Copy this to ~/.config/sharp-objects/config.yaml
+
+# List of ports to monitor
+# The tool will show any process listening on these ports
+ports:
+  # Common JS dev servers
+  - 3000  # React, Next.js, Express
+  - 3001  # Alt dev server
+  - 3002  # Alt dev server
+
+  # Framework-specific
+  - 4321  # Astro
+  - 5173  # Vite
+  - 5174  # Alt Vite
+  - 1313  # Hugo
+
+  # General dev
+  - 5000  # Flask, general
+  - 8000  # Python HTTP, Django
+  - 8001  # Alt HTTP
+  - 8080  # Common HTTP
+  - 8081  # Alt HTTP
+
+  # Cloudflare Wrangler
+  - 8787  # Wrangler dev
+  - 8788  # Alt Wrangler
+
+  # Tools
+  - 9229  # Node debugger
+  - 5432  # PostgreSQL
+  - 7878  # Custom services
+  - 7272  # Custom services
+
+# List of process names to monitor
+# The tool will show these processes regardless of port
+processes:
+  - node    # Node.js
+  - bun     # Bun runtime
+  - deno    # Deno runtime
+  - wrangler # Cloudflare Workers
+  # - expo    # Uncomment if you use Expo
+  # - python  # Uncomment to monitor Python servers
