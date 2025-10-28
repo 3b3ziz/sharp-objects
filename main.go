@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -40,6 +41,10 @@ var (
 	errorStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("9"))
+
+	successStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Italic(true)
 )
 
 type model struct {
@@ -48,12 +53,14 @@ type model struct {
 	cursor         int
 	confirmingKill bool
 	error          string
+	successMsg     string
 }
 
 type refreshMsg struct{}
 type killMsg struct {
 	err error
 }
+type clearMsg struct{}
 
 func initialModel() model {
 	config := LoadConfig()
@@ -112,6 +119,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.processes) > 0 {
 				m.confirmingKill = true
 				m.error = ""
+				m.successMsg = ""
 			}
 
 		case "r":
@@ -125,6 +133,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		processes, _ := GetProcesses(m.config)
 		m.processes = processes
 		m.error = ""
+		m.successMsg = ""
 		// Adjust cursor if it's out of bounds
 		if m.cursor >= len(m.processes) {
 			m.cursor = len(m.processes) - 1
@@ -137,13 +146,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.confirmingKill = false
 		if msg.err != nil {
 			m.error = fmt.Sprintf("Failed to kill process: %v", msg.err)
+			m.successMsg = ""
 		} else {
 			m.error = ""
-			// Refresh after kill
+			m.successMsg = "I never loved you. I hope that brings you some comfort."
+			// Refresh after kill and set up message clearing
 			return m, func() tea.Msg {
-				return refreshMsg{}
+				time.Sleep(3 * time.Second)
+				return clearMsg{}
 			}
 		}
+
+	case clearMsg:
+		m.successMsg = ""
+		m.error = ""
 	}
 
 	return m, nil
@@ -153,7 +169,7 @@ func (m model) View() string {
 	var b strings.Builder
 
 	// Title
-	b.WriteString(titleStyle.Render("🔌 Dev Process Monitor"))
+	b.WriteString(titleStyle.Render("Sharp Objects"))
 	b.WriteString("\n\n")
 
 	// Show confirmation dialog
@@ -169,6 +185,12 @@ func (m model) View() string {
 	// Show error if any
 	if m.error != "" {
 		b.WriteString(errorStyle.Render(m.error))
+		b.WriteString("\n\n")
+	}
+
+	// Show success message if any
+	if m.successMsg != "" {
+		b.WriteString(successStyle.Render(m.successMsg))
 		b.WriteString("\n\n")
 	}
 
