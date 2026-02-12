@@ -1,0 +1,91 @@
+# GoReleaser configuration for Sharp Objects
+# See https://goreleaser.com for documentation
+
+version: 2
+
+before:
+  hooks:
+    # Ensure dependencies are up to date
+    - go mod tidy
+
+builds:
+  - id: sharp-objects
+    binary: sharp-objects
+    main: .
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: sharp-objects-archive
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE
+      - config.example.yaml
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge remote-tracking branch
+      - Merge branch
+  groups:
+    - title: 'Features'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance Improvements'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: 'Refactors'
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: 'Other Changes'
+      order: 999
+
+release:
+  github:
+    owner: 3b3ziz
+    name: sharp-objects
+  draft: false
+  prerelease: auto
+  mode: append
+  header: |
+    ## Release {{ .Tag }} ({{ .Date }})
+
+    Download the appropriate binary for your platform below.
+  footer: |
+    **Full Changelog**: https://github.com/3b3ziz/sharp-objects/compare/{{ .PreviousTag }}...{{ .Tag }}

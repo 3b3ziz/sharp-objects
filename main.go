@@ -48,12 +48,16 @@ var (
 )
 
 type model struct {
-	processes      []Process
-	config         Config
-	cursor         int
-	confirmingKill bool
-	error          string
-	successMsg     string
+	processes          []Process
+	filteredProcesses  []Process
+	config             Config
+	cursor             int
+	pendingKill        int  // -1 means no pending kill, otherwise index of process to kill
+	showSystemServices bool // Toggle to show/hide system services
+	searchMode         bool
+	searchQuery        string
+	error              string
+	successMsg         string
 }
 
 type refreshMsg struct{}
@@ -64,13 +68,18 @@ type clearMsg struct{}
 
 func initialModel() model {
 	config := LoadConfig()
-	processes, _ := GetProcesses(config)
+	showSystemServices := false // Default to hiding system services
+	processes, _ := GetProcesses(config, showSystemServices)
 
 	return model{
-		processes:      processes,
-		config:         config,
-		cursor:         0,
-		confirmingKill: false,
+		processes:          processes,
+		filteredProcesses:  processes,
+		config:             config,
+		cursor:             0,
+		pendingKill:        -1,
+		showSystemServices: showSystemServices,
+		searchMode:         false,
+		searchQuery:        "",
 	}
 }
 
@@ -78,79 +87,180 @@ func (m model) Init() tea.Cmd {
 	return nil
 }
 
+// filterProcesses filters the process list based on the search query
+func (m *model) filterProcesses() {
+	if m.searchQuery == "" {
+		m.filteredProcesses = m.processes
+		return
+	}
+
+	query := strings.ToLower(m.searchQuery)
+	filtered := make([]Process, 0)
+
+	for _, p := range m.processes {
+		// Search across port, PID, command, and working directory
+		if strings.Contains(strings.ToLower(fmt.Sprintf("%d", p.Port)), query) ||
+			strings.Contains(strings.ToLower(fmt.Sprintf("%d", p.PID)), query) ||
+			strings.Contains(strings.ToLower(p.Command), query) ||
+			strings.Contains(strings.ToLower(p.WorkingDir), query) ||
+			strings.Contains(strings.ToLower(p.Name), query) {
+			filtered = append(filtered, p)
+		}
+	}
+
+	m.filteredProcesses = filtered
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// If confirming kill
-		if m.confirmingKill {
+		// Handle search mode input
+		if m.searchMode {
 			switch msg.String() {
-			case "y", "Y":
-				if m.cursor < len(m.processes) {
-					pid := m.processes[m.cursor].PID
-					return m, func() tea.Msg {
-						err := KillProcess(pid)
-						return killMsg{err: err}
-					}
+			case "esc":
+				// Exit search mode and clear search
+				m.searchMode = false
+				m.searchQuery = ""
+				m.filterProcesses()
+				m.cursor = 0
+				m.pendingKill = -1
+				return m, nil
+
+			case "enter":
+				// Exit search mode but keep the filter
+				m.searchMode = false
+				m.pendingKill = -1
+				return m, nil
+
+			case "backspace":
+				// Delete last character
+				if len(m.searchQuery) > 0 {
+					m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+					m.filterProcesses()
+					m.cursor = 0
+					m.pendingKill = -1
 				}
-				m.confirmingKill = false
-			case "n", "N", "esc":
-				m.confirmingKill = false
+				return m, nil
+
+			default:
+				// Add typed character to search query
+				if len(msg.String()) == 1 {
+					m.searchQuery += msg.String()
+					m.filterProcesses()
+					m.cursor = 0
+					m.pendingKill = -1
+				}
+				return m, nil
 			}
-			return m, nil
 		}
 
-		// Normal key handling
+		// Normal mode key handling
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 
-		case "up", "k":
+		case "/":
+			// Enter search mode
+			m.searchMode = true
+			m.searchQuery = ""
+			m.pendingKill = -1
+			return m, nil
+
+		case "esc":
+			// Clear search if not in search mode
+			if m.searchQuery != "" {
+				m.searchQuery = ""
+				m.filterProcesses()
+				m.cursor = 0
+				m.pendingKill = -1
+			}
+			return m, nil
+
+		case "up":
 			if m.cursor > 0 {
 				m.cursor--
+				m.pendingKill = -1 // Cancel pending kill on navigation
 			}
 
-		case "down", "j":
-			if m.cursor < len(m.processes)-1 {
+		case "down":
+			if m.cursor < len(m.filteredProcesses)-1 {
 				m.cursor++
+				m.pendingKill = -1 // Cancel pending kill on navigation
 			}
 
-		case "K":
-			// Kill with confirmation
-			if len(m.processes) > 0 {
-				m.confirmingKill = true
-				m.error = ""
-				m.successMsg = ""
+		case "k":
+			// Double-tap to kill
+			if len(m.filteredProcesses) > 0 {
+				if m.pendingKill == m.cursor {
+					// Second press - kill the process
+					pid := m.filteredProcesses[m.cursor].PID
+					m.pendingKill = -1
+					return m, func() tea.Msg {
+						err := KillProcess(pid)
+						return killMsg{err: err}
+					}
+				} else {
+					// First press - mark for pending kill
+					m.pendingKill = m.cursor
+					m.error = ""
+					m.successMsg = ""
+				}
 			}
 
 		case "r":
 			// Refresh process list
+			m.pendingKill = -1 // Cancel pending kill on refresh
 			return m, func() tea.Msg {
 				return refreshMsg{}
 			}
+
+		case "f":
+			// Toggle system services filter
+			m.showSystemServices = !m.showSystemServices
+			m.pendingKill = -1
+			return m, func() tea.Msg {
+				return refreshMsg{}
+			}
+
+		default:
+			// Cancel pending kill on any other key
+			m.pendingKill = -1
 		}
 
 	case refreshMsg:
-		processes, _ := GetProcesses(m.config)
+		processes, _ := GetProcesses(m.config, m.showSystemServices)
 		m.processes = processes
+		m.filterProcesses()
 		m.error = ""
 		m.successMsg = ""
+		m.pendingKill = -1
 		// Adjust cursor if it's out of bounds
-		if m.cursor >= len(m.processes) {
-			m.cursor = len(m.processes) - 1
+		if m.cursor >= len(m.filteredProcesses) {
+			m.cursor = len(m.filteredProcesses) - 1
 		}
 		if m.cursor < 0 {
 			m.cursor = 0
 		}
 
 	case killMsg:
-		m.confirmingKill = false
 		if msg.err != nil {
 			m.error = fmt.Sprintf("Failed to kill process: %v", msg.err)
 			m.successMsg = ""
 		} else {
 			m.error = ""
 			m.successMsg = "I never loved you. I hope that brings you some comfort."
-			// Refresh after kill and set up message clearing
+			// Refresh process list immediately after successful kill
+			processes, _ := GetProcesses(m.config, m.showSystemServices)
+			m.processes = processes
+			m.filterProcesses()
+			// Adjust cursor if it's out of bounds
+			if m.cursor >= len(m.filteredProcesses) {
+				m.cursor = len(m.filteredProcesses) - 1
+			}
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+			// Set up message clearing
 			return m, func() tea.Msg {
 				time.Sleep(3 * time.Second)
 				return clearMsg{}
@@ -172,14 +282,16 @@ func (m model) View() string {
 	b.WriteString(titleStyle.Render("Sharp Objects"))
 	b.WriteString("\n\n")
 
-	// Show confirmation dialog
-	if m.confirmingKill && len(m.processes) > 0 {
-		selected := m.processes[m.cursor]
-		b.WriteString(confirmStyle.Render(
-			fmt.Sprintf("Kill process %s (PID: %d) on port %d? (y/n)",
-				selected.Name, selected.PID, selected.Port),
-		))
-		return b.String()
+	// Show search bar
+	if m.searchMode || m.searchQuery != "" {
+		searchPrefix := "Search: "
+		searchText := m.searchQuery
+		if m.searchMode {
+			searchText += "_" // Show cursor in search mode
+		}
+		resultCount := fmt.Sprintf(" (%d results)", len(m.filteredProcesses))
+		b.WriteString(headerStyle.Render(searchPrefix + searchText + resultCount))
+		b.WriteString("\n\n")
 	}
 
 	// Show error if any
@@ -195,25 +307,43 @@ func (m model) View() string {
 	}
 
 	// Header
-	header := fmt.Sprintf("%-8s %-20s %-10s %s", "PORT", "PROCESS", "PID", "WORKING DIR")
+	header := fmt.Sprintf("%-8s %-10s %-50s %s", "PORT", "PID", "COMMAND", "WORKING DIR")
 	b.WriteString(headerStyle.Render(header))
 	b.WriteString("\n")
-	b.WriteString(strings.Repeat("─", 80))
+	b.WriteString(strings.Repeat("─", 120))
 	b.WriteString("\n")
 
 	// Rows
-	if len(m.processes) == 0 {
-		b.WriteString(helpStyle.Render("No processes found on monitored ports."))
+	if len(m.filteredProcesses) == 0 {
+		if m.searchQuery != "" {
+			b.WriteString(helpStyle.Render("No processes match your search."))
+		} else {
+			b.WriteString(helpStyle.Render("No processes found on monitored ports."))
+		}
 		b.WriteString("\n\n")
 	} else {
-		for i, p := range m.processes {
+		for i, p := range m.filteredProcesses {
 			// Truncate working dir if too long
 			workingDir := p.WorkingDir
-			if len(workingDir) > 35 {
-				workingDir = "..." + workingDir[len(workingDir)-32:]
+			if len(workingDir) > 30 {
+				workingDir = "..." + workingDir[len(workingDir)-27:]
 			}
 
-			row := fmt.Sprintf("%-8d %-20s %-10d %s", p.Port, p.Name, p.PID, workingDir)
+			// Truncate command if too long
+			command := p.Command
+			if len(command) > 50 {
+				command = command[:47] + "..."
+			}
+			if command == "" {
+				command = p.Name // Fallback to process name if command is empty
+			}
+
+			row := fmt.Sprintf("%-8d %-10d %-50s %s", p.Port, p.PID, command, workingDir)
+
+			// Add pending kill indicator
+			if i == m.pendingKill {
+				row += "  " + errorStyle.Render("(press k again to kill)")
+			}
 
 			if i == m.cursor {
 				b.WriteString(selectedStyle.Render(row))
@@ -226,7 +356,17 @@ func (m model) View() string {
 
 	// Help text
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("↑/↓ or j/k: navigate  •  K: kill  •  r: refresh  •  q: quit"))
+	filterStatus := "dev only"
+	if m.showSystemServices {
+		filterStatus = "all"
+	}
+	var helpText string
+	if m.searchMode {
+		helpText = "Type to search  •  Enter: confirm  •  Esc: clear search"
+	} else {
+		helpText = fmt.Sprintf("↑/↓: navigate  •  k: kill  •  /: search  •  r: refresh  •  f: filter (%s)  •  Esc: clear  •  q: quit", filterStatus)
+	}
+	b.WriteString(helpStyle.Render(helpText))
 
 	return b.String()
 }

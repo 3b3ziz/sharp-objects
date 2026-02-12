@@ -16,6 +16,24 @@ A simple TUI (Terminal User Interface) for monitoring and killing development pr
 
 ## Installation
 
+### Pre-built Binaries
+
+Download the latest release for your platform from the [releases page](https://github.com/3b3ziz/sharp-objects/releases).
+
+Available platforms:
+- macOS (Intel and Apple Silicon)
+- Linux (amd64 and arm64)
+
+Extract the archive and move the binary to a directory in your PATH:
+
+```bash
+# Example for macOS/Linux
+tar -xzf sharp-objects_*.tar.gz
+sudo mv sharp-objects /usr/local/bin/
+```
+
+### Build from Source
+
 ```bash
 go build -o sharp-objects
 ```

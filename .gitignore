@@ -31,3 +31,8 @@ go.work
 # OS files
 .DS_Store
 Thumbs.db
+
+# GoReleaser
+dist/
+*.tar.gz
+*.zip
