@@ -28,11 +28,6 @@ var (
 			Foreground(lipgloss.Color("241")).
 			Padding(1, 0)
 
-	confirmStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("9")).
-			Padding(1, 0)
-
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("10")).
