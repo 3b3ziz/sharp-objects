@@ -1,4 +1,4 @@
-module sharp-objects
+module github.com/3b3ziz/sharp-objects
 
 go 1.24.0
 
