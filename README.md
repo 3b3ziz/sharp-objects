@@ -99,4 +99,22 @@ The tool:
 
 ## Why?
 
-When developing with multiple servers (Next.js, Vite, Wrangler, Expo, etc.), ports can get stuck or you might forget what's running where. This tool gives you a quick overview of ALL listening processes, with smart filtering to focus on dev processes by default, and easy cleanup with double-tap confirmation.
+Tired of running `lsof -i :3000` to find the PID, then `kill -9 <pid>` to free up a port?
+
+This tool eliminates the tedium:
+- No more memorizing lsof syntax
+- No more copying/pasting PIDs
+- No more accidentally killing the wrong process
+- See ALL your listening ports at a glance
+- Double-tap confirmation prevents mistakes
+- Smart filtering hides system noise
+
+Instead of this:
+```bash
+lsof -i :3000                    # Find what's on port 3000
+kill -9 12345                    # Kill it
+lsof -i TCP -s TCP:LISTEN        # What else is running?
+# ... repeat for each port ...
+```
+
+Just run `sharp-objects` and navigate with arrow keys.
