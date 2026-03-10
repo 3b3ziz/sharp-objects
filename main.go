@@ -4,10 +4,16 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+)
+
+// Version info - injected at build time via ldflags
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
 )
 
 var (
@@ -53,13 +59,13 @@ type model struct {
 	searchQuery        string
 	error              string
 	successMsg         string
+	showKillModal      bool // Show modal after successful kill
 }
 
 type refreshMsg struct{}
 type killMsg struct {
 	err error
 }
-type clearMsg struct{}
 
 func initialModel() model {
 	config := LoadConfig()
@@ -109,6 +115,17 @@ func (m *model) filterProcesses() {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle kill modal dismissal
+		if m.showKillModal {
+			switch msg.String() {
+			case "enter", "esc", " ":
+				m.showKillModal = false
+				m.successMsg = ""
+				return m, nil
+			}
+			return m, nil // Ignore other keys while modal is showing
+		}
+
 		// Handle search mode input
 		if m.searchMode {
 			switch msg.String() {
@@ -244,6 +261,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.error = ""
 			m.successMsg = "I never loved you. I hope that brings you some comfort."
+			m.showKillModal = true
 			// Refresh process list immediately after successful kill
 			processes, _ := GetProcesses(m.config, m.showSystemServices)
 			m.processes = processes
@@ -255,16 +273,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
-			// Set up message clearing
-			return m, func() tea.Msg {
-				time.Sleep(3 * time.Second)
-				return clearMsg{}
-			}
 		}
 
-	case clearMsg:
-		m.successMsg = ""
-		m.error = ""
 	}
 
 	return m, nil
@@ -276,6 +286,22 @@ func (m model) View() string {
 	// Title
 	b.WriteString(titleStyle.Render("Sharp Objects"))
 	b.WriteString("\n\n")
+
+	// Show kill confirmation modal
+	if m.showKillModal {
+		modalStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("10")).
+			Padding(1, 3).
+			Align(lipgloss.Center)
+
+		modalContent := successStyle.Render(m.successMsg) + "\n\n" +
+			helpStyle.Render("Press Enter or Esc to continue")
+
+		b.WriteString(modalStyle.Render(modalContent))
+		b.WriteString("\n\n")
+		return b.String()
+	}
 
 	// Show search bar
 	if m.searchMode || m.searchQuery != "" {
@@ -367,6 +393,12 @@ func (m model) View() string {
 }
 
 func main() {
+	// Handle version flag
+	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Printf("sharp-objects %s (%s) built %s\n", version, commit, date)
+		os.Exit(0)
+	}
+
 	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v\n", err)
